@@ -311,50 +311,75 @@ def form_analyzer(forms: list) -> list:
 
 
 # =============================================================================
-# TOOL 5: Endpoint Fuzzer (Async)
+# TOOL 5: Endpoint Prober (Async, passive)
 # =============================================================================
-def endpoint_fuzzer(base_url: str, endpoints: list) -> list:
-    """Fuzz endpoints with async concurrency."""
+def endpoint_prober(base_url: str, endpoints: list) -> list:
+    """
+    Passively probe discovered endpoints with GET only.
+    No method bruting, no payload injection. Just checks:
+    - Does the endpoint exist?
+    - What does it return? (status, size, content-type, headers)
+    - Is there anything interesting in the response?
+    """
     results = []
-
-    suffixes = ["", "/", "?debug=true", "?test=1", ".json", ".xml",
-                ".bak", ".old", "/config", "/admin", "/debug", "/health"]
-    methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
 
     jobs = []
     for ep in endpoints[:MAX_FUZZ_ENDPOINTS]:
         url = ep if ep.startswith("http") else f"{base_url.rstrip('/')}{ep}"
-        for method in methods:
-            jobs.append((method, url, None))
-        for suffix in suffixes:
-            if suffix:
-                jobs.append(("GET", f"{url}{suffix}", f"suffix:{suffix}"))
+        jobs.append((url, None))
+        # Also check .json variant for API endpoints
+        if "/api/" in url or "/wp-json/" in url or "/v1/" in url or "/v2/" in url:
+            if not url.endswith(".json"):
+                jobs.append((f"{url}.json", "json_variant"))
 
-    async def fuzz_one(client, sem, method, url, note):
+    async def probe_one(client, sem, url, note):
         async with sem:
             try:
-                r = await client.request(method, url, follow_redirects=True)
-                if r.status_code not in (404, 405, 501):
-                    res = {"endpoint": url, "method": method, "status": r.status_code,
-                           "size": len(r.text), "content_type": r.headers.get("content-type", "")}
+                r = await client.get(url, follow_redirects=True)
+                if r.status_code != 404:
+                    res = {
+                        "endpoint": url,
+                        "status": r.status_code,
+                        "size": len(r.text),
+                        "content_type": r.headers.get("content-type", ""),
+                    }
+
+                    # Capture interesting headers
                     hdrs = {}
-                    for h in ("allow", "x-powered-by", "server", "x-debug", "www-authenticate"):
+                    for h in ("allow", "x-powered-by", "server", "x-debug",
+                              "www-authenticate", "x-frame-options",
+                              "access-control-allow-origin", "x-request-id",
+                              "x-rag-provider", "x-generator"):
                         v = r.headers.get(h)
                         if v:
                             hdrs[h] = v
                     if hdrs:
-                        res["interesting_headers"] = hdrs
-                    if note:
+                        res["headers"] = hdrs
+
+                    # Preview for small responses (API responses, configs)
+                    if r.status_code == 200 and len(r.text) < 5000:
+                        res["preview"] = r.text[:500]
+
+                    # Flag auth-required endpoints
+                    if r.status_code in (401, 403):
+                        res["note"] = "requires_auth"
+                    elif r.status_code == 500:
+                        res["note"] = "server_error"
+                    elif note:
                         res["note"] = note
+
                     results.append(res)
             except Exception:
                 pass
 
     async def run():
         sem = asyncio.Semaphore(FUZZ_THREADS)
-        async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT},
-                                     timeout=REQUEST_TIMEOUT, verify=False) as client:
-            await asyncio.gather(*[fuzz_one(client, sem, m, u, n) for m, u, n in jobs],
+        async with httpx.AsyncClient(
+            headers={"User-Agent": USER_AGENT},
+            timeout=REQUEST_TIMEOUT, verify=False,
+            follow_redirects=True,
+        ) as client:
+            await asyncio.gather(*[probe_one(client, sem, u, n) for u, n in jobs],
                                  return_exceptions=True)
 
     asyncio.run(run())
@@ -363,7 +388,7 @@ def endpoint_fuzzer(base_url: str, endpoints: list) -> list:
     seen = set()
     unique = []
     for r in results:
-        key = f"{r['endpoint']}:{r['method']}:{r['status']}"
+        key = f"{r['endpoint']}:{r['status']}"
         if key not in seen:
             seen.add(key)
             unique.append(r)
