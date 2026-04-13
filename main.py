@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 # =============================================================================
-# ReconCrew v3 - Semi-Agentic Web Reconnaissance
+# ReconCrew v3.1 - Agentic Web Reconnaissance
 # =============================================================================
-# Each phase: Tool runs → Agent analyzes results with LLM
-# If LLM fails at any point, fallback to raw data. Scan never breaks.
+# Agents make real decisions:
+#   - Spider Agent:   chooses crawl depth, identifies extra paths to check
+#   - JS Agent:       decides which JS files matter, prioritizes findings
+#   - Secrets Agent:  takes Spider's extra paths, probes additional files
+#   - Forms Agent:    triages form issues by exploitability
+#   - Endpoint Prober:   picks tech-specific endpoints, analyzes access control
+#   - Coordinator:    synthesizes everything into final report
+#
+# Every decision has a fallback. If LLM fails, scan continues with defaults.
 # =============================================================================
 
 import sys
@@ -36,59 +43,38 @@ BANNER = r"""
 ║           ╚██████╗██║  ██║███████╗╚███╔███╔╝         ║
 ║            ╚═════╝╚═╝  ╚═╝╚══════╝ ╚══╝╚══╝         ║
 ║                                                      ║
-║   Semi-Agentic Web Reconnaissance  v3                ║
+║   Agentic Web Reconnaissance  v3.1                   ║
 ║   For authorized security testing only               ║
 ╚══════════════════════════════════════════════════════╝
 """
 
 
-def run_phase(name, tool_func, agent_func, tool_args, agent_args_from_tool=None):
-    """
-    Run a phase: execute tool, then have agent analyze results.
-    Returns (tool_data, agent_analysis).
-    """
+def run_agent(name, agent, *args):
+    """Run an agent with timing."""
     print(f"\n{'='*60}")
-    print(f"[*] Phase: {name}")
+    print(f"[*] Agent: {name}")
     print(f"{'='*60}")
-
-    # Step 1: Run tool
     start = time.time()
-    print(f"[*] Running tool...")
     try:
-        tool_data = tool_func(*tool_args)
-        tool_time = time.time() - start
-        print(f"[+] Tool completed in {tool_time:.1f}s")
+        result = agent.run(*args)
+        elapsed = time.time() - start
+        findings = len(result.get("analysis", {}).get("findings", []))
+        print(f"[+] {name} completed in {elapsed:.1f}s — {findings} findings")
+        return result
     except Exception as e:
-        print(f"[!] Tool failed: {e}")
+        print(f"[!] {name} failed: {e}")
         import traceback
         traceback.print_exc()
-        return None, {"findings": [], "notes": f"Tool failed: {e}"}
-
-    # Step 2: Agent analyzes
-    print(f"[*] Agent analyzing...")
-    start = time.time()
-    try:
-        if agent_args_from_tool:
-            agent_input = agent_args_from_tool(tool_data)
-        else:
-            agent_input = tool_data
-        analysis = agent_func(agent_input)
-        agent_time = time.time() - start
-        print(f"[+] Agent done in {agent_time:.1f}s")
-    except Exception as e:
-        print(f"[!] Agent failed: {e}")
-        analysis = {"findings": [], "notes": f"Agent failed: {e}"}
-
-    return tool_data, analysis
+        return {"tool_data": None, "analysis": {"findings": [], "notes": f"Failed: {e}"}}
 
 
 def main():
     print(BANNER)
 
-    parser = argparse.ArgumentParser(description="ReconCrew v3")
+    parser = argparse.ArgumentParser(description="ReconCrew v3.1")
     parser.add_argument("target", help="Target URL")
-    parser.add_argument("--skip-fuzz", action="store_true")
-    parser.add_argument("--skip-ai", action="store_true", help="Skip all LLM analysis")
+    parser.add_argument("--skip-probe", action="store_true")
+    parser.add_argument("--skip-ai", action="store_true")
     args = parser.parse_args()
 
     target = args.target
@@ -97,10 +83,9 @@ def main():
 
     print(f"[*] Target: {target}\n")
 
-    # Check LLM
     if not args.skip_ai:
         if not check_llm_connection():
-            print("[!] LLM not available. Use --skip-ai for basic scan.")
+            print("[!] LLM not available. Use --skip-ai for tool-only mode.")
             sys.exit(1)
         print()
 
@@ -110,130 +95,56 @@ def main():
 
     start_time = time.time()
 
-    # Import here to avoid config issues
-    from tools import web_spider, js_analyzer, secrets_scanner, form_analyzer, endpoint_fuzzer
-    from agents import (agent_spider_analyze, agent_js_analyze, agent_secrets_analyze,
-                        agent_forms_analyze, agent_fuzz_analyze, agent_coordinator)
-
-    # Dummy agent for --skip-ai mode
-    def no_agent(data):
-        findings = []
-        if isinstance(data, dict):
-            for tech in data.get("technologies_detected", []):
-                findings.append({"title": f"Technology: {tech}", "severity": "info",
-                                 "category": "information_disclosure", "description": tech,
-                                 "evidence": tech, "recommendation": "Keep updated"})
-        return {"findings": findings, "notes": "AI analysis skipped"}
-
-    spider_agent = no_agent if args.skip_ai else agent_spider_analyze
-    js_agent_fn = no_agent if args.skip_ai else agent_js_analyze
-    secrets_agent = no_agent if args.skip_ai else agent_secrets_analyze
-    forms_agent = no_agent if args.skip_ai else agent_forms_analyze
-    fuzz_agent = no_agent if args.skip_ai else agent_fuzz_analyze
+    from agents import SpiderAgent, JSAgent, SecretsAgent, FormsAgent, ProberAgent, CoordinatorAgent
 
     # ============================
     # Phase 1: Spider
     # ============================
-    spider_data, spider_analysis = run_phase(
-        "Web Spider",
-        web_spider, spider_agent,
-        tool_args=(target,),
-    )
+    spider_result = run_agent("Spider Agent", SpiderAgent(), target)
+    spider_data = spider_result.get("tool_data")
 
     if not spider_data:
         print("[!] Spider failed, cannot continue.")
         sys.exit(1)
 
-    # Print spider summary
-    print(f"    ├─ Pages:    {len(spider_data.get('pages', []))}")
-    print(f"    ├─ JS files: {len(spider_data.get('js_files', []))}")
-    print(f"    ├─ Forms:    {len(spider_data.get('forms', []))}")
-    print(f"    ├─ Comments: {len(spider_data.get('comments', []))}")
-    print(f"    └─ Tech:     {', '.join(spider_data.get('technologies_detected', []))}")
+    extra_paths = spider_result.get("extra_paths", [])
 
     # ============================
     # Phase 2: JS Analysis
     # ============================
     js_files = spider_data.get("js_files", [])
-    target_js = [f for f in js_files
-                 if not any(skip in f for skip in ["jquery", "cloudflare", "cdn.", "googleapis",
-                                                    "gstatic", "wp-includes", "wp-emoji"])]
-    print(f"\n[*] JS: {len(js_files)} total, {len(target_js)} target-specific")
+    target_domain = urlparse(target).netloc
+    js_result = run_agent("JS Agent", JSAgent(), js_files, target_domain)
+    js_data = js_result.get("tool_data", [])
 
-    js_data, js_analysis = run_phase(
-        "JS Analysis",
-        js_analyzer, js_agent_fn,
-        tool_args=(target_js,) if target_js else ([], ),
-    )
-
+    # Collect endpoints for prober
+    js_endpoints = []
     if js_data:
-        total_ep = sum(len(f.get("endpoints", [])) for f in js_data if isinstance(f, dict))
-        total_sec = sum(len(f.get("secrets", [])) for f in js_data if isinstance(f, dict))
-        print(f"    ├─ Endpoints: {total_ep}")
-        print(f"    └─ Secrets:   {total_sec}")
+        for f in js_data:
+            if isinstance(f, dict):
+                for ep in f.get("endpoints", []):
+                    val = ep.get("value", "")
+                    if val:
+                        js_endpoints.append(val)
 
     # ============================
-    # Phase 3: Secrets
+    # Phase 3: Secrets (receives extra paths from Spider Agent)
     # ============================
-    secrets_data, secrets_analysis = run_phase(
-        "Secrets Scanner",
-        secrets_scanner, secrets_agent,
-        tool_args=(target,),
-    )
-
-    if secrets_data:
-        accessible = len([s for s in secrets_data if s.get("status") == 200])
-        forbidden = len([s for s in secrets_data if s.get("status") == 403])
-        print(f"    ├─ Accessible: {accessible}")
-        print(f"    └─ Forbidden:  {forbidden}")
+    secrets_result = run_agent("Secrets Agent", SecretsAgent(), target, extra_paths)
 
     # ============================
     # Phase 4: Forms
     # ============================
     forms = spider_data.get("forms", [])
-    forms_data, forms_analysis = run_phase(
-        "Form Analysis",
-        form_analyzer, forms_agent,
-        tool_args=(forms,),
-    )
-    if forms_data:
-        print(f"    └─ Forms with issues: {len(forms_data)}")
+    forms_result = run_agent("Forms Agent", FormsAgent(), forms)
 
     # ============================
-    # Phase 5: Fuzzing
+    # Phase 5: Probing
     # ============================
-    fuzz_data = []
-    fuzz_analysis = {"findings": [], "notes": "Skipped"}
-
-    if not args.skip_fuzz:
-        endpoints = set()
-        if js_data:
-            for f in js_data:
-                if isinstance(f, dict):
-                    for ep in f.get("endpoints", []):
-                        endpoints.add(ep.get("value", ""))
-
-        # WP endpoints
-        wp_eps = ["/wp-json/wp/v2/users", "/wp-json/wp/v2/posts", "/wp-json/",
-                  "/wp-admin/", "/wp-login.php", "/wp-content/debug.log",
-                  "/xmlrpc.php", "/wp-cron.php", "/?rest_route=/wp/v2/users"]
-        endpoints.update(wp_eps)
-        endpoints.discard("")
-
-        fuzz_data, fuzz_analysis = run_phase(
-            "Endpoint Fuzzer",
-            endpoint_fuzzer, fuzz_agent,
-            tool_args=(target.rstrip("/"), list(endpoints)),
-        )
-
-        if fuzz_data:
-            by_status = {}
-            for r in fuzz_data:
-                s = r.get("status", "?")
-                by_status[s] = by_status.get(s, 0) + 1
-            for status, count in sorted(by_status.items()):
-                print(f"    ├─ HTTP {status}: {count}")
-            print(f"    └─ Total: {len(fuzz_data)}")
+    probe_result = {"tool_data": [], "analysis": {"findings": [], "notes": "Skipped"}}
+    if not args.skip_probe:
+        techs = spider_data.get("technologies_detected", [])
+        probe_result = run_agent("Endpoint Prober", ProberAgent(), target, js_endpoints, techs)
 
     duration = time.time() - start_time
 
@@ -242,56 +153,56 @@ def main():
     # ============================
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     raw_path = os.path.join(OUTPUT_DIR, f"raw_{urlparse(target).netloc}_{datetime.now():%Y%m%d_%H%M%S}.json")
-    raw_data = {
-        "spider": spider_data, "js_analysis": js_data or [],
-        "secrets": secrets_data or [], "forms_analysis": forms_data or [],
-        "fuzz": fuzz_data or [],
+    raw = {
+        "spider": spider_data, "js": js_data or [],
+        "secrets": secrets_result.get("tool_data", []),
+        "forms": forms_result.get("tool_data", []),
+        "probe": probe_result.get("tool_data", []),
     }
     with open(raw_path, "w") as f:
-        json.dump(raw_data, f, indent=2, ensure_ascii=False)
+        json.dump(raw, f, indent=2, ensure_ascii=False)
     print(f"\n[+] Raw data: {raw_path}")
 
     # ============================
     # Phase 6: Coordinator
     # ============================
-    print(f"\n{'='*60}")
-    print(f"[*] Phase: Coordinator Report")
-    print(f"{'='*60}")
-
-    all_agent_results = {
-        "spider": spider_analysis,
-        "js": js_analysis,
-        "secrets": secrets_analysis,
-        "forms": forms_analysis,
-        "fuzz": fuzz_analysis,
+    all_results = {
+        "spider": spider_result, "js": js_result,
+        "secrets": secrets_result, "forms": forms_result,
+        "probe": probe_result,
     }
 
+    print(f"\n{'='*60}")
+    print(f"[*] Agent: Coordinator")
+    print(f"{'='*60}")
+
     if args.skip_ai:
-        # Assemble basic report
         all_findings = []
-        for r in all_agent_results.values():
-            all_findings.extend(r.get("findings", []))
+        for r in all_results.values():
+            all_findings.extend(r.get("analysis", {}).get("findings", []))
         report = {
             "executive_summary": f"Scan of {target}. {len(all_findings)} findings.",
             "technologies": spider_data.get("technologies_detected", []),
             "findings": all_findings,
-            "statistics": {"pages_crawled": len(spider_data.get("pages", [])), "total_findings": len(all_findings)},
+            "statistics": {"pages_crawled": len(spider_data.get("pages", []))},
             "next_steps": ["Manual testing", "WPScan", "Auth testing"],
         }
     else:
         start = time.time()
-        report = agent_coordinator(target, all_agent_results, duration)
+        coordinator = CoordinatorAgent()
+        report = coordinator.run(target, {k: v for k, v in all_results.items()}, duration)
         print(f"[+] Coordinator done in {time.time()-start:.1f}s")
 
     # ============================
-    # Generate HTML report
+    # HTML Report
     # ============================
     from report_generator import generate_report
     report_path = generate_report(report, target, duration)
     print(f"[+] HTML report: {report_path}")
 
+    total = time.time() - start_time
     print(f"\n{'='*60}")
-    print(f"[+] Scan completed in {int(duration//60)}m {int(duration%60)}s")
+    print(f"[+] Completed in {int(total//60)}m {int(total%60)}s")
     print(f"{'='*60}")
 
 
