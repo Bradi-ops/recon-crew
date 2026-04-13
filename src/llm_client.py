@@ -55,6 +55,9 @@ def _call_openai_compatible(host, model, api_key, prompt, system, max_tokens):
     messages.append({"role": "user", "content": prompt})
 
     try:
+        # GPT-5.x models use max_completion_tokens instead of max_tokens
+        token_param = "max_completion_tokens" if host == "https://api.openai.com" else "max_tokens"
+
         r = httpx.post(
             f"{host}/v1/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},
@@ -62,7 +65,7 @@ def _call_openai_compatible(host, model, api_key, prompt, system, max_tokens):
                 "model": model,
                 "messages": messages,
                 "temperature": LLM_TEMPERATURE,
-                "max_tokens": max_tokens,
+                token_param: max_tokens,
             },
             timeout=180,
         )
