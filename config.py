@@ -8,7 +8,7 @@ import os
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "lmstudio")  # lmstudio | openai | anthropic
 
 # --- LM Studio ---
-LM_STUDIO_HOST = os.getenv("LM_STUDIO_HOST", "http://192.168.50.213:1234")
+LM_STUDIO_HOST = os.getenv("LM_STUDIO_HOST", "http://192.168.1.1:1234")
 LM_STUDIO_MODEL = os.getenv("LM_STUDIO_MODEL", "qwen2.5-14b-instruct")
 
 # --- OpenAI ---
