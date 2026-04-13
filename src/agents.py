@@ -75,7 +75,7 @@ Return JSON:
 - Forms: {len(spider_data.get('forms', []))}
 - Comments: {len(spider_data.get('comments', []))}
 - Emails: {spider_data.get('emails', [])}
-- Interesting headers: {json.dumps(spider_data.get('headers_of_interest', {{}}))}
+- Interesting headers: {json.dumps(spider_data.get('headers_of_interest') or dict())}
 - External links sample: {json.dumps(spider_data.get('external_links', [])[:5])}
 - Meta generators: {json.dumps([m.get('content','') for m in spider_data.get('meta_tags',[]) if m.get('name')=='generator'])}
 
