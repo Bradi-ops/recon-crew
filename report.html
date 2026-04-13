@@ -1,0 +1,491 @@
+{# =============================================================================
+   ReconCrew - HTML Report Template
+   Offensive security styled interactive report
+============================================================================= #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReconCrew Report — {{ target }}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+  :root {
+    --bg-primary: #0a0a0f;
+    --bg-secondary: #12121a;
+    --bg-card: #1a1a2e;
+    --bg-card-hover: #1e1e35;
+    --border: #2a2a3e;
+    --text-primary: #e0e0e8;
+    --text-secondary: #8888a0;
+    --text-muted: #555570;
+    --accent-red: #ff3b5c;
+    --accent-orange: #ff8c42;
+    --accent-yellow: #ffd166;
+    --accent-green: #06d6a0;
+    --accent-blue: #4ea8de;
+    --accent-purple: #9b5de5;
+    --critical: #ff1744;
+    --high: #ff5252;
+    --medium: #ff9100;
+    --low: #ffd740;
+    --info: #448aff;
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    --font-sans: 'Inter', -apple-system, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* --- Header --- */
+  .header {
+    background: linear-gradient(135deg, #0a0a1a 0%, #1a0a2e 50%, #0a1a2e 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 3rem 2rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .header::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 2px,
+      rgba(255,255,255,0.01) 2px, rgba(255,255,255,0.01) 4px
+    );
+    pointer-events: none;
+  }
+  .header-content {
+    max-width: 1200px;
+    margin: 0 auto;
+    position: relative;
+    z-index: 1;
+  }
+  .header h1 {
+    font-family: var(--font-mono);
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--accent-red);
+    letter-spacing: -0.5px;
+  }
+  .header h1 span { color: var(--text-muted); font-weight: 300; }
+  .header-meta {
+    margin-top: 1rem;
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+  }
+  .header-meta .label { color: var(--text-muted); }
+  .header-meta .value { color: var(--accent-blue); }
+
+  /* --- Layout --- */
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+  }
+
+  /* --- Stats Bar --- */
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  .stat-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2rem;
+    text-align: center;
+    transition: all 0.2s;
+  }
+  .stat-card:hover {
+    border-color: var(--accent-purple);
+    transform: translateY(-2px);
+  }
+  .stat-number {
+    font-family: var(--font-mono);
+    font-size: 2rem;
+    font-weight: 700;
+  }
+  .stat-label {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-top: 0.3rem;
+  }
+  .stat-critical .stat-number { color: var(--critical); }
+  .stat-high .stat-number { color: var(--high); }
+  .stat-medium .stat-number { color: var(--medium); }
+  .stat-low .stat-number { color: var(--low); }
+  .stat-info .stat-number { color: var(--info); }
+  .stat-total .stat-number { color: var(--accent-purple); }
+
+  /* --- Executive Summary --- */
+  .exec-summary {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent-purple);
+    border-radius: 8px;
+    padding: 1.5rem 2rem;
+    margin-bottom: 2rem;
+    font-size: 0.95rem;
+    line-height: 1.8;
+  }
+
+  /* --- Section --- */
+  .section {
+    margin-bottom: 2rem;
+  }
+  .section-title {
+    font-family: var(--font-mono);
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--accent-blue);
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+  }
+  .section-title .toggle {
+    font-size: 0.8rem;
+    transition: transform 0.2s;
+  }
+  .section-title .toggle.collapsed { transform: rotate(-90deg); }
+
+  /* --- Findings --- */
+  .finding {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
+    overflow: hidden;
+    transition: all 0.2s;
+  }
+  .finding:hover { border-color: var(--accent-purple); }
+  .finding-header {
+    padding: 1rem 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    cursor: pointer;
+  }
+  .finding-detail {
+    padding: 0 1.25rem 1.25rem;
+    display: none;
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+  }
+  .finding.open .finding-detail { display: block; }
+  .severity-badge {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 0.25rem 0.6rem;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  .sev-critical { background: rgba(255,23,68,0.15); color: var(--critical); border: 1px solid rgba(255,23,68,0.3); }
+  .sev-high     { background: rgba(255,82,82,0.15); color: var(--high); border: 1px solid rgba(255,82,82,0.3); }
+  .sev-medium   { background: rgba(255,145,0,0.15); color: var(--medium); border: 1px solid rgba(255,145,0,0.3); }
+  .sev-low      { background: rgba(255,215,64,0.12); color: var(--low); border: 1px solid rgba(255,215,64,0.3); }
+  .sev-info     { background: rgba(68,138,255,0.12); color: var(--info); border: 1px solid rgba(68,138,255,0.3); }
+
+  .finding-title {
+    font-weight: 500;
+    flex-grow: 1;
+  }
+  .finding-category {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  .evidence {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.8rem 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    overflow-x: auto;
+    margin: 0.5rem 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--accent-green);
+  }
+  .recommendation {
+    margin-top: 0.5rem;
+    padding: 0.6rem 1rem;
+    background: rgba(78,168,222,0.08);
+    border-left: 2px solid var(--accent-blue);
+    border-radius: 0 4px 4px 0;
+    font-size: 0.9rem;
+  }
+
+  /* --- Technology Tags --- */
+  .tech-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0; }
+  .tech-tag {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    padding: 0.3rem 0.7rem;
+    background: rgba(155,93,229,0.12);
+    border: 1px solid rgba(155,93,229,0.3);
+    border-radius: 20px;
+    color: var(--accent-purple);
+  }
+
+  /* --- Next Steps --- */
+  .next-steps {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+  }
+  .next-step {
+    padding: 0.6rem 0;
+    border-bottom: 1px solid rgba(42,42,62,0.5);
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+  }
+  .next-step:last-child { border-bottom: none; }
+  .step-number {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--accent-green);
+    background: rgba(6,214,160,0.1);
+    border: 1px solid rgba(6,214,160,0.2);
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  /* --- Filter Bar --- */
+  .filter-bar {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .filter-btn {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    padding: 0.4rem 0.8rem;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .filter-btn:hover, .filter-btn.active {
+    border-color: var(--accent-purple);
+    color: var(--text-primary);
+    background: rgba(155,93,229,0.1);
+  }
+
+  /* --- Footer --- */
+  .footer {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    border-top: 1px solid var(--border);
+    margin-top: 2rem;
+  }
+
+  /* --- Responsive --- */
+  @media (max-width: 768px) {
+    .container { padding: 1rem; }
+    .header { padding: 2rem 1rem; }
+    .header h1 { font-size: 1.4rem; }
+    .header-meta { flex-direction: column; gap: 0.5rem; }
+    .stats-bar { grid-template-columns: repeat(3, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-content">
+    <h1>ReconCrew<span>//</span> Report</h1>
+    <div class="header-meta">
+      <div><span class="label">TARGET </span><span class="value">{{ target }}</span></div>
+      <div><span class="label">DATE </span><span class="value">{{ scan_date }}</span></div>
+      <div><span class="label">DURATION </span><span class="value">{{ duration }}</span></div>
+      <div><span class="label">PAGES </span><span class="value">{{ stats.pages_crawled }}</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- Stats -->
+  <div class="stats-bar">
+    <div class="stat-card stat-critical"><div class="stat-number">{{ stats.critical }}</div><div class="stat-label">Critical</div></div>
+    <div class="stat-card stat-high"><div class="stat-number">{{ stats.high }}</div><div class="stat-label">High</div></div>
+    <div class="stat-card stat-medium"><div class="stat-number">{{ stats.medium }}</div><div class="stat-label">Medium</div></div>
+    <div class="stat-card stat-low"><div class="stat-number">{{ stats.low }}</div><div class="stat-label">Low</div></div>
+    <div class="stat-card stat-info"><div class="stat-number">{{ stats.info }}</div><div class="stat-label">Info</div></div>
+    <div class="stat-card stat-total"><div class="stat-number">{{ stats.total }}</div><div class="stat-label">Total</div></div>
+  </div>
+
+  <!-- Executive Summary -->
+  <div class="exec-summary">
+    {{ executive_summary }}
+  </div>
+
+  <!-- Technologies -->
+  {% if technologies %}
+  <div class="section">
+    <div class="section-title">
+      <span class="toggle">▼</span> Detected Technologies
+    </div>
+    <div class="section-content">
+      <div class="tech-tags">
+        {% for tech in technologies %}
+        <span class="tech-tag">{{ tech }}</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Filter -->
+  <div class="filter-bar">
+    <button class="filter-btn active" onclick="filterFindings('all')">All</button>
+    <button class="filter-btn" onclick="filterFindings('critical')">Critical</button>
+    <button class="filter-btn" onclick="filterFindings('high')">High</button>
+    <button class="filter-btn" onclick="filterFindings('medium')">Medium</button>
+    <button class="filter-btn" onclick="filterFindings('low')">Low</button>
+    <button class="filter-btn" onclick="filterFindings('info')">Info</button>
+  </div>
+
+  <!-- Findings -->
+  <div class="section" id="findings-section">
+    <div class="section-title">
+      <span class="toggle">▼</span> Findings ({{ stats.total }})
+    </div>
+    <div class="section-content">
+      {% for finding in findings %}
+      <div class="finding" data-severity="{{ finding.severity }}">
+        <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="severity-badge sev-{{ finding.severity }}">{{ finding.severity }}</span>
+          <span class="finding-title">{{ finding.title }}</span>
+          <span class="finding-category">{{ finding.category }}</span>
+        </div>
+        <div class="finding-detail">
+          <p>{{ finding.description }}</p>
+          {% if finding.evidence %}
+          <div class="evidence">{{ finding.evidence }}</div>
+          {% endif %}
+          {% if finding.recommendation %}
+          <div class="recommendation">💡 {{ finding.recommendation }}</div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Next Steps -->
+  {% if next_steps %}
+  <div class="section">
+    <div class="section-title">
+      <span class="toggle">▼</span> Recommended Next Steps
+    </div>
+    <div class="section-content">
+      <div class="next-steps">
+        {% for step in next_steps %}
+        <div class="next-step">
+          <span class="step-number">{{ loop.index }}</span>
+          <span>{{ step }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+<div class="footer">
+  ReconCrew // Multi-Agent Web Reconnaissance System<br>
+  Generated {{ scan_date }} — For authorized security testing only
+</div>
+
+<script>
+// Toggle sections (but NOT the findings section - that stays open)
+document.querySelectorAll('.section-title').forEach(title => {
+  title.addEventListener('click', () => {
+    // Don't collapse the findings section
+    const section = title.closest('.section');
+    if (section && section.id === 'findings-section') return;
+
+    const toggle = title.querySelector('.toggle');
+    const content = title.nextElementSibling;
+    if (content) {
+      content.style.display = content.style.display === 'none' ? 'block' : 'none';
+      toggle.classList.toggle('collapsed');
+    }
+  });
+});
+
+// Filter findings
+function filterFindings(severity) {
+  // Update active button
+  document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+  // Use closest to handle clicks on child elements
+  const btn = window.event.target.closest('.filter-btn');
+  if (btn) btn.classList.add('active');
+
+  // Ensure findings section is visible
+  const findingsContent = document.querySelector('#findings-section .section-content');
+  if (findingsContent) findingsContent.style.display = 'block';
+
+  // Filter
+  document.querySelectorAll('.finding').forEach(f => {
+    if (severity === 'all' || f.dataset.severity === severity) {
+      f.style.display = 'block';
+    } else {
+      f.style.display = 'none';
+    }
+  });
+
+  // Update count
+  const visible = document.querySelectorAll('.finding[style="display: block"]').length
+    + (severity === 'all' ? document.querySelectorAll('.finding:not([style])').length : 0);
+}
+
+// Expand all critical/high by default
+document.querySelectorAll('.finding[data-severity="critical"], .finding[data-severity="high"]').forEach(f => {
+  f.classList.add('open');
+});
+</script>
+</body>
+</html>

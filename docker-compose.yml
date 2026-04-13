@@ -1,0 +1,11 @@
+services:
+  reconcrew:
+    build: .
+    container_name: reconcrew
+    volumes:
+      - ./reports:/app/reports
+    env_file:
+      - .env
+    network_mode: host    # Needed to reach LM Studio on host
+    stdin_open: true      # For interactive confirm prompt
+    tty: true
