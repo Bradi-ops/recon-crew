@@ -32,7 +32,7 @@ Multi-agent web recon system with LLM-powered analysis. Each phase runs a specia
 
 ```bash
 # 1. Clone
-git clone https://github.com/YOUR_USER/recon-crew.git
+git clone [https://github.com/YOUR_USER/recon-crew.git](https://github.com/Bradi-ops/recon-crew)
 cd recon-crew
 
 # 2. Configure
